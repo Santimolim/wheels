@@ -1,0 +1,11 @@
+# NetBeans / Ant (generados al compilar)
+build/
+dist/
+nbproject/private/
+*.bak
+
+# Varios
+*.zip
+*.class
+Thumbs.db
+desktop.ini

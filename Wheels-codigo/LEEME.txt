@@ -1,0 +1,25 @@
+WHEELS - Codigo fuente para NetBeans
+====================================
+
+Contenido:
+  src/wheels/Wheels.java              -> clase principal (aqui esta el main)
+  src/wheels/modelo/                  -> Usuario, Vehiculo, Viaje, Solicitud
+  src/wheels/datos/BaseDatos.java     -> guarda todo en memoria con ArrayList
+  src/wheels/vistas/                  -> las 13 ventanas + Estilo + VentanaBase
+                                         + BarraInferior + TarjetaViaje
+
+COMO USARLO EN NETBEANS
+-----------------------
+1. NetBeans -> File -> New Project -> Java with Ant -> Java Application
+2. Project Name: Wheels     Main Class: wheels.Wheels
+3. Cierra NetBeans.
+4. Entra a la carpeta del proyecto que creo NetBeans y reemplaza
+   la carpeta "src" por la carpeta "src" de este ZIP.
+5. Abre NetBeans de nuevo y presiona F6 para ejecutar.
+
+USUARIO DE PRUEBA
+-----------------
+  correo:     santiago.molina@unal.edu.co
+  contrasena: 1234
+
+Autor: Santiago Molina Mora
