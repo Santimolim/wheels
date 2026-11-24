@@ -1,0 +1,7 @@
+# Copia este archivo como "wheels.properties" (junto a build.xml o junto a wheels.jar)
+# y ajusta los valores de tu MySQL. Cualquier clave que falte usa el valor por defecto.
+db.host=localhost
+db.port=3307
+db.name=wheels
+db.user=root
+db.password=

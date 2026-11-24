@@ -1,94 +1,192 @@
 package wheels.vistas;
 
+import com.formdev.flatlaf.FlatClientProperties;
+import java.awt.BorderLayout;
+import java.awt.Cursor;
+import java.util.prefs.Preferences;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JLabel;
-import javax.swing.JOptionPane;
+import javax.swing.JPanel;
 import javax.swing.JPasswordField;
 import javax.swing.JTextField;
-import javax.swing.SwingConstants;
+import javax.swing.SwingWorker;
 import wheels.datos.BaseDatos;
+import wheels.datos.Conexion;
 import wheels.modelo.Usuario;
 
-/** PANTALLA 2 - Log In. */
+/** PANTALLA 2 - Iniciar sesion con correo institucional y contrasena. */
 public class VentanaLogin extends VentanaBase {
 
-    private JTextField txtEmail;
-    private JPasswordField txtPassword;
+    static final String REGEX_CORREO = "^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*\\.edu(\\.[A-Za-z]{2})?$";
+    private static final Preferences PREFS = Preferences.userNodeForPackage(VentanaLogin.class);
+
+    private final JTextField txtEmail;
+    private final JPasswordField txtPassword;
+    private final Estilo.Campo campoEmail, campoClave;
+    private final JCheckBox recordar;
+    private final Estilo.Aviso aviso;
+    private final Estilo.Boton entrar;
 
     public VentanaLogin() {
-        super("Iniciar sesion");
+        super("Iniciar sesión");
 
-        JLabel logo = new JLabel("W", SwingConstants.CENTER);
-        logo.setBounds(160, 50, 60, 60);
-        logo.setOpaque(true);
-        logo.setBackground(Estilo.TEAL);
-        logo.setForeground(Estilo.NAVY);
-        logo.setFont(new java.awt.Font("SansSerif", java.awt.Font.BOLD, 32));
-        lienzo.add(logo);
+        Diseno.Columna f = new Diseno.Columna(400, 28, 40).centrada();
+        PanelAcceso panel = new PanelAcceso(f);
 
-        JLabel t = new JLabel("Bienvenido de nuevo", SwingConstants.CENTER);
-        t.setBounds(0, 130, Estilo.ANCHO, 28);
-        t.setFont(Estilo.TITULO);
-        t.setForeground(Estilo.TEXTO);
-        lienzo.add(t);
+        f.agregar(PanelAcceso.botonVolver());
+        f.espacio(12);
+        JPanel logo = PanelAcceso.filaIzquierda(new Logo.Marca(38, Estilo.NAVY, true));
+        f.agregar(logo);
+        JComponentEspacio sep = new JComponentEspacio(36);
+        f.agregar(sep);
+        panel.soloEnAngosto(logo);
+        panel.soloEnAngosto(sep);
 
-        JLabel s = new JLabel("Ingresa con tu correo institucional", SwingConstants.CENTER);
-        s.setBounds(0, 158, Estilo.ANCHO, 20);
-        s.setFont(Estilo.PEQUENA);
-        s.setForeground(Estilo.GRIS);
-        lienzo.add(s);
+        f.agregar(Estilo.texto("Bienvenido de nuevo", Estilo.h1(), Estilo.TEXTO));
+        f.espacio(6);
+        f.agregar(new Estilo.Parrafo("Ingresa con tu correo institucional para continuar.", Estilo.cuerpo(), Estilo.GRIS));
+        f.espacio(24);
 
-        lienzo.add(Estilo.etiqueta("Correo institucional", 30, 210));
-        txtEmail = Estilo.campo(30, 232, 320);
-        lienzo.add(txtEmail);
+        aviso = new Estilo.Aviso();
+        f.agregar(aviso);
+        f.espacio(4);
 
-        lienzo.add(Estilo.etiqueta("Contrasena", 30, 280));
-        txtPassword = Estilo.campoClave(30, 302, 320);
-        lienzo.add(txtPassword);
+        txtEmail = Estilo.campo("nombre@universidad.edu.co", Iconos.Tipo.CORREO);
+        txtEmail.putClientProperty(FlatClientProperties.TEXT_FIELD_SHOW_CLEAR_BUTTON, true);
+        campoEmail = new Estilo.Campo("Correo institucional", txtEmail, null);
+        f.agregar(campoEmail);
+        f.espacio(6);
 
-        JButton entrar = Estilo.botonPrimario("Log In", 30, 365, 320);
+        txtPassword = Estilo.campoClave("Tu contraseña");
+        campoClave = new Estilo.Campo("Contraseña", txtPassword, null);
+        f.agregar(campoClave);
+        f.espacio(2);
+
+        recordar = new JCheckBox("Recordar mi correo en este equipo");
+        recordar.setFont(Estilo.pequena());
+        recordar.setForeground(Estilo.TEXTO2);
+        recordar.setOpaque(false);
+        recordar.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        f.agregar(recordar);
+        f.espacio(22);
+
+        entrar = Estilo.boton("Iniciar sesión", Estilo.TipoBoton.PRIMARIO, Estilo.Tamano.GRANDE, null);
         entrar.addActionListener(e -> iniciarSesion());
-        lienzo.add(entrar);
+        f.agregar(entrar);
+        f.espacio(20);
 
-        JButton crear = Estilo.enlace("No tienes cuenta? Crear cuenta", 30, 420, 320);
-        crear.addActionListener(e -> irA(new VentanaRegistro()));
-        lienzo.add(crear);
+        JPanel crear = Estilo.panel(new java.awt.FlowLayout(java.awt.FlowLayout.CENTER, 4, 0));
+        crear.add(Estilo.texto("¿Aún no tienes cuenta?", Estilo.pequena(), Estilo.GRIS));
+        JButton link = Estilo.enlace("Crea una gratis");
+        link.addActionListener(e -> irA(VentanaRegistro::new));
+        crear.add(link);
+        f.agregar(crear);
+        f.espacio(36);
 
-        txtPassword.addActionListener(e -> iniciarSesion());   // Enter para entrar
+        boolean conectado = BaseDatos.probarConexion();
+        JLabel estado = Estilo.texto(conectado
+                ? "Conectado · " + Conexion.getInstancia().getDescripcion()
+                : "Sin conexión con la base de datos", Estilo.fuente(12, Estilo.REGULAR),
+                conectado ? Estilo.VERDE_TEXTO : Estilo.ROJO_TEXTO);
+        estado.setIcon(new PuntoEstado(conectado ? Estilo.VERDE : Estilo.ROJO));
+        estado.setIconTextGap(8);
+        estado.setHorizontalAlignment(JLabel.CENTER);
+        f.agregar(estado);
 
-        JLabel estado = new JLabel("Conectado a la base de datos Wheels", SwingConstants.CENTER);
-        estado.setBounds(30, 620, 320, 20);
-        estado.setFont(Estilo.PEQUENA);
-        estado.setForeground(Estilo.VERDE);
-        lienzo.add(estado);
+        txtEmail.addActionListener(e -> txtPassword.requestFocusInWindow());
+        txtPassword.addActionListener(e -> iniciarSesion());
+
+        String guardado = PREFS.get("correo", "");
+        if (!guardado.isEmpty()) {
+            txtEmail.setText(guardado);
+            recordar.setSelected(true);
+        }
+
+        add(panel, BorderLayout.CENTER);
+    }
+
+    @Override public boolean esRaiz() { return false; }
+
+    @Override public void alMostrar() {
+        if (txtEmail.getText().isEmpty()) txtEmail.requestFocusInWindow();
+        else txtPassword.requestFocusInWindow();
     }
 
     private void iniciarSesion() {
-        String email = txtEmail.getText().trim();
-        String clave = new String(txtPassword.getPassword());
+        aviso.ocultar();
+        campoEmail.setError(null);
+        campoClave.setError(null);
+        final String email = txtEmail.getText().trim();
+        final String clave = new String(txtPassword.getPassword());
 
-        if (email.isEmpty() || clave.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Debes llenar los dos campos.",
-                    "Wheels", JOptionPane.WARNING_MESSAGE);
+        boolean ok = true;
+        if (email.isEmpty()) {
+            campoEmail.setError("Escribe tu correo institucional.");
+            ok = false;
+        } else if (!email.matches(REGEX_CORREO)) {
+            campoEmail.setError("Usa tu correo institucional (termina en .edu o .edu.co).");
+            ok = false;
+        }
+        if (clave.isEmpty()) {
+            campoClave.setError("Escribe tu contraseña.");
+            ok = false;
+        }
+        if (!ok) {
+            cuerpoRevalidar();
             return;
         }
 
-        if (!email.contains("@") || !email.contains(".edu")) {
-            JOptionPane.showMessageDialog(this,
-                    "Debes usar un correo institucional (que contenga .edu).",
-                    "Wheels", JOptionPane.WARNING_MESSAGE);
-            return;
+        entrar.setEnabled(false);
+        entrar.setText("Ingresando…");
+        new SwingWorker<Usuario, Void>() {
+            @Override protected Usuario doInBackground() { return BaseDatos.validarLogin(email, clave); }
+            @Override protected void done() {
+                entrar.setEnabled(true);
+                entrar.setText("Iniciar sesión");
+                Usuario u;
+                try {
+                    u = get();
+                } catch (Exception ex) {
+                    u = null;
+                }
+                if (u == null) {
+                    aviso.mostrar("Correo o contraseña incorrectos. Revisa los datos e inténtalo de nuevo.", "error");
+                    txtPassword.selectAll();
+                    txtPassword.requestFocusInWindow();
+                    cuerpoRevalidar();
+                    return;
+                }
+                if (recordar.isSelected()) PREFS.put("correo", email); else PREFS.remove("correo");
+                BaseDatos.usuarioActual = u;
+                irRaiz(VentanaHome::new);
+                toast("¡Hola, " + u.getPrimerNombre() + "!", Dialogos.Tono.EXITO);
+            }
+        }.execute();
+    }
+
+    private void cuerpoRevalidar() {
+        revalidate();
+        repaint();
+    }
+
+    /** Espacio vertical que se puede ocultar (solo visible en ventana angosta). */
+    static final class JComponentEspacio extends javax.swing.JComponent {
+        JComponentEspacio(int alto) { setPreferredSize(new java.awt.Dimension(1, alto)); }
+    }
+
+    /** Punto de color para el estado de la conexion. */
+    static final class PuntoEstado implements javax.swing.Icon {
+        private final java.awt.Color color;
+        PuntoEstado(java.awt.Color c) { color = c; }
+        @Override public int getIconWidth() { return 8; }
+        @Override public int getIconHeight() { return 8; }
+        @Override public void paintIcon(java.awt.Component c, java.awt.Graphics g, int x, int y) {
+            java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
+            Estilo.suavizar(g2);
+            g2.setColor(color);
+            g2.fillOval(x, y, 8, 8);
+            g2.dispose();
         }
-
-        Usuario u = BaseDatos.validarLogin(email, clave);
-
-        if (u == null) {
-            JOptionPane.showMessageDialog(this, "Correo o contrasena incorrectos.",
-                    "Wheels", JOptionPane.ERROR_MESSAGE);
-            return;
-        }
-
-        BaseDatos.usuarioActual = u;
-        irA(new VentanaHome());
     }
 }

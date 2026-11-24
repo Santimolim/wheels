@@ -1,67 +1,81 @@
 package wheels.vistas;
 
+import java.time.Year;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
-import javax.swing.JOptionPane;
 import javax.swing.JTextField;
 import wheels.datos.BaseDatos;
 import wheels.modelo.Vehiculo;
 
-/** PANTALLA 10 - Register Vehicle. */
+/** PANTALLA 10 - Registrar o editar el vehiculo del usuario. */
 public class VentanaRegistrarVehiculo extends VentanaBase {
 
-    private JTextField txtMarca, txtModelo, txtColor, txtPlaca;
-    private JComboBox<String> cmbPuestos, cmbAnio;
+    private final boolean paraPublicar;
+    private final JTextField txtMarca, txtModelo, txtColor, txtPlaca;
+    private final JComboBox<String> cmbPuestos, cmbAnio;
+    private final Estilo.Campo cMarca, cModelo, cColor, cPlaca;
+    private final Estilo.Aviso aviso = new Estilo.Aviso();
+    private final boolean nuevo;
 
-    public VentanaRegistrarVehiculo() {
-        super("Registrar vehiculo");
-
-        JButton volver = Estilo.enlace("< Volver", 20, 16, 80);
-        volver.addActionListener(e -> volver());
-        lienzo.add(volver);
-
-        lienzo.add(Estilo.titulo("Registrar vehiculo", 20, 48));
-        lienzo.add(Estilo.texto("Necesario una sola vez para poder publicar viajes.",
-                20, 78, 340, Estilo.PEQUENA, Estilo.GRIS));
-
-        lienzo.add(Estilo.etiqueta("Marca", 20, 116));
-        txtMarca = Estilo.campo(20, 136, 340);
-        lienzo.add(txtMarca);
-
-        lienzo.add(Estilo.etiqueta("Modelo", 20, 182));
-        txtModelo = Estilo.campo(20, 202, 340);
-        lienzo.add(txtModelo);
-
-        lienzo.add(Estilo.etiqueta("Color", 20, 248));
-        txtColor = Estilo.campo(20, 268, 340);
-        lienzo.add(txtColor);
-
-        lienzo.add(Estilo.etiqueta("Placa", 20, 314));
-        txtPlaca = Estilo.campo(20, 334, 340);
-        lienzo.add(txtPlaca);
-
-        lienzo.add(Estilo.etiqueta("Puestos", 20, 380));
-        cmbPuestos = new JComboBox<>(new String[]{"1", "2", "3", "4", "5", "6"});
-        cmbPuestos.setBounds(20, 400, 165, 34);
-        cmbPuestos.setFont(Estilo.NORMAL);
-        cmbPuestos.setBackground(Estilo.BLANCO);
-        cmbPuestos.setSelectedIndex(3);
-        lienzo.add(cmbPuestos);
-
-        lienzo.add(Estilo.etiqueta("Modelo (ano)", 195, 380));
-        String[] anios = new String[20];
-        int actualAnio = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR);
-        for (int i = 0; i < 20; i++) anios[i] = String.valueOf(actualAnio + 1 - i);
-        cmbAnio = new JComboBox<>(anios);
-        cmbAnio.setBounds(195, 400, 165, 34);
-        cmbAnio.setFont(Estilo.NORMAL);
-        cmbAnio.setBackground(Estilo.BLANCO);
-        cmbAnio.setSelectedIndex(3);
-        lienzo.add(cmbAnio);
-
-        // Si ya tiene vehiculo, se muestran sus datos para poder editarlos
+    /** paraPublicar = true cuando viene del boton Publicar sin tener vehiculo. */
+    public VentanaRegistrarVehiculo(boolean paraPublicar) {
+        super("Mi vehículo");
+        this.paraPublicar = paraPublicar;
         Vehiculo actual = BaseDatos.usuarioActual.getVehiculo();
-        if (actual != null) {
+        nuevo = actual == null;
+
+        encabezado(nuevo ? "Registra tu vehículo" : "Editar vehículo",
+                nuevo ? "Solo lo haces una vez para poder publicar viajes" : actual.getNombre() + " · " + actual.getPlaca(),
+                !paraPublicar);
+        Diseno.Columna c = crearCuerpo(640);
+
+        if (paraPublicar) {
+            Estilo.Aviso a = new Estilo.Aviso();
+            a.mostrar("Para publicar un viaje primero necesitamos los datos de tu carro. "
+                    + "Los pasajeros los verán para reconocerte en el punto de encuentro.", "info");
+            c.agregar(a);
+            c.espacio(16);
+        }
+
+        Estilo.Tarjeta t = Estilo.Tarjeta.conColumna(4);
+        t.conRelleno(22, 24);
+        Diseno.Columna f = t.columna();
+        f.agregar(aviso);
+
+        Diseno.Rejilla r1 = new Diseno.Rejilla(200, 2, 14, 0);
+        txtMarca = Estilo.campo("Ej: Mazda", Iconos.Tipo.CARRO);
+        txtModelo = Estilo.campo("Ej: 3 Touring", null);
+        cMarca = new Estilo.Campo("Marca", txtMarca, null);
+        cModelo = new Estilo.Campo("Modelo", txtModelo, null);
+        r1.add(cMarca);
+        r1.add(cModelo);
+        f.agregar(r1);
+
+        Diseno.Rejilla r2 = new Diseno.Rejilla(200, 2, 14, 0);
+        txtColor = Estilo.campo("Ej: Gris", null);
+        txtPlaca = Estilo.campo("ABC123", null);
+        txtPlaca.setFont(Estilo.fuente(14, Estilo.SEMI));
+        ((javax.swing.text.AbstractDocument) txtPlaca.getDocument()).setDocumentFilter(new FiltroPlaca());
+        cColor = new Estilo.Campo("Color", txtColor, null);
+        cPlaca = new Estilo.Campo("Placa", txtPlaca, "3 letras y 3 números (motos: ABC12D)");
+        r2.add(cColor);
+        r2.add(cPlaca);
+        f.agregar(r2);
+
+        Diseno.Rejilla r3 = new Diseno.Rejilla(200, 2, 14, 0);
+        String[] anios = new String[30];
+        int este = Year.now().getValue();
+        for (int i = 0; i < anios.length; i++) anios[i] = String.valueOf(este + 1 - i);
+        cmbAnio = Estilo.combo(anios);
+        cmbAnio.setSelectedItem(String.valueOf(este - 3));
+        cmbPuestos = Estilo.combo(new String[]{"1", "2", "3", "4", "5", "6", "7"});
+        cmbPuestos.setSelectedItem("4");
+        r3.add(new Estilo.Campo("Año del modelo", cmbAnio, null));
+        r3.add(new Estilo.Campo("Puestos para pasajeros", cmbPuestos, "Sin contar el del conductor"));
+        f.agregar(r3);
+        f.espacio(14);
+
+        if (!nuevo) {
             txtMarca.setText(actual.getMarca());
             txtModelo.setText(actual.getModelo());
             txtColor.setText(actual.getColor());
@@ -70,42 +84,67 @@ public class VentanaRegistrarVehiculo extends VentanaBase {
             cmbAnio.setSelectedItem(String.valueOf(actual.getAnio()));
         }
 
-        JButton guardar = Estilo.botonPrimario("Save Vehicle", 20, 470, 340);
+        JButton guardar = Estilo.boton(nuevo ? "Guardar y continuar" : "Guardar cambios",
+                Estilo.TipoBoton.PRIMARIO, Estilo.Tamano.GRANDE, Iconos.Tipo.CHECK);
         guardar.addActionListener(e -> guardar());
-        lienzo.add(guardar);
-
-        JButton cancelar = Estilo.botonBlanco("Cancelar", 20, 522, 340);
-        cancelar.addActionListener(e -> volver());
-        lienzo.add(cancelar);
+        f.agregar(guardar);
+        c.agregar(t);
     }
 
+    @Override public String seccion() { return paraPublicar ? PUBLICAR : PERFIL; }
+    @Override public boolean esRaiz() { return paraPublicar; }
+    @Override public void alMostrar() { txtMarca.requestFocusInWindow(); }
+
     private void guardar() {
+        aviso.ocultar();
+        for (Estilo.Campo c : new Estilo.Campo[]{cMarca, cModelo, cColor, cPlaca}) c.setError(null);
         String marca  = txtMarca.getText().trim();
         String modelo = txtModelo.getText().trim();
         String color  = txtColor.getText().trim();
         String placa  = txtPlaca.getText().trim().toUpperCase();
 
-        if (marca.isEmpty() || modelo.isEmpty() || color.isEmpty() || placa.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Debes llenar todos los campos.",
-                    "Wheels", JOptionPane.WARNING_MESSAGE);
-            return;
+        boolean ok = true;
+        if (marca.isEmpty() || marca.length() > 50) { cMarca.setError("Escribe la marca."); ok = false; }
+        if (modelo.isEmpty() || modelo.length() > 50) { cModelo.setError("Escribe el modelo."); ok = false; }
+        if (color.isEmpty() || color.length() > 30) { cColor.setError("Escribe el color."); ok = false; }
+        if (!placa.matches("[A-Z]{3}\\d{3}") && !placa.matches("[A-Z]{3}\\d{2}[A-Z]")) {
+            cPlaca.setError("Formato no válido. Ej: ABC123 o ABC12D."); ok = false;
         }
-        if (placa.length() < 5) {
-            JOptionPane.showMessageDialog(this, "La placa no parece valida.",
-                    "Wheels", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-
-        int puestos = Integer.parseInt(cmbPuestos.getSelectedItem().toString());
-        int anio = Integer.parseInt(cmbAnio.getSelectedItem().toString());
-
-        if (!BaseDatos.guardarVehiculo(marca, modelo, color, placa, anio, puestos)) {
+        if (!ok) {
+            revalidate();
+            repaint();
             return;
         }
 
-        JOptionPane.showMessageDialog(this, "Vehiculo guardado correctamente.",
-                "Wheels", JOptionPane.INFORMATION_MESSAGE);
+        String error = BaseDatos.guardarVehiculo(capitalizar(marca), modelo, capitalizar(color), placa,
+                Integer.parseInt(cmbAnio.getSelectedItem().toString()),
+                Integer.parseInt(cmbPuestos.getSelectedItem().toString()));
+        if (error != null) {
+            if (error.contains("placa")) cPlaca.setError(error); else aviso.mostrar(error, "error");
+            revalidate();
+            return;
+        }
+        toast(nuevo ? "Vehículo registrado" : "Vehículo actualizado", Dialogos.Tono.EXITO);
+        if (paraPublicar) irRaiz(VentanaPublicarViaje::new);
+        else volver();
+    }
 
-        volver();
+    private static String capitalizar(String s) {
+        return s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);
+    }
+
+    /** Solo deja escribir letras y numeros en la placa, en mayuscula y maximo 6 caracteres. */
+    private static final class FiltroPlaca extends javax.swing.text.DocumentFilter {
+        @Override public void insertString(FilterBypass fb, int off, String s, javax.swing.text.AttributeSet a)
+                throws javax.swing.text.BadLocationException {
+            replace(fb, off, 0, s, a);
+        }
+        @Override public void replace(FilterBypass fb, int off, int len, String s, javax.swing.text.AttributeSet a)
+                throws javax.swing.text.BadLocationException {
+            String limpio = s == null ? "" : s.toUpperCase().replaceAll("[^A-Z0-9]", "");
+            int cabe = 6 - (fb.getDocument().getLength() - len);
+            if (limpio.length() > cabe) limpio = limpio.substring(0, Math.max(0, cabe));
+            super.replace(fb, off, len, limpio, a);
+        }
     }
 }

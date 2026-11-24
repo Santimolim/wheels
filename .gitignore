@@ -9,3 +9,6 @@ nbproject/private/
 *.class
 Thumbs.db
 desktop.ini
+
+# Configuracion local de la base de datos
+wheels.properties

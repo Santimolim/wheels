@@ -1,15 +1,17 @@
 package wheels.vistas;
 
+import java.awt.BorderLayout;
 import java.awt.Color;
-import java.awt.Font;
-import java.awt.Toolkit;
-import java.awt.datatransfer.StringSelection;
+import java.awt.Dimension;
+import java.awt.GridLayout;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JLabel;
-import javax.swing.JOptionPane;
 import javax.swing.JPanel;
-import javax.swing.JTextField;
-import javax.swing.SwingConstants;
+import javax.swing.JProgressBar;
 import javax.swing.Timer;
 import wheels.datos.BaseDatos;
 import wheels.modelo.Solicitud;
@@ -18,18 +20,24 @@ import wheels.modelo.Viaje;
 
 /**
  * PANTALLA - Viaje en curso.
- * Muestra el mapa con el carro avanzando, tiempo estimado de llegada,
- * datos del conductor, chat, compartir ubicacion y BOTON DE PANICO (SOS).
+ * Muestra el mapa con la posicion ESTIMADA del carro segun el tiempo transcurrido
+ * desde que se inicio el viaje (Wheels no usa GPS), la hora estimada de llegada,
+ * los datos del conductor, chat, compartir el viaje y el BOTON DE PANICO (SOS).
  */
 public class VentanaViajeEnCurso extends VentanaBase {
+
+    private static final DateTimeFormatter HORA = DateTimeFormatter.ofPattern("h:mm a");
 
     private final Solicitud solicitud;
     private final Viaje viaje;
     private final PanelMapa mapa;
-    private final JPanel cabecera;
-    private final JLabel lblEstado, lblEta, lblVelocidad;
+    private final long inicio;
+    private final double minutosTotales;
+    private final boolean duracionEstimada;
+    private final JLabel lblEstado, lblEta, lblRestante;
+    private final JProgressBar barra;
+    private final Estilo.Tarjeta alerta;
     private Timer timerViaje, timerAlerta;
-    private double progreso = 0;
     private boolean alertaActiva = false;
     private boolean llego = false;
 
@@ -37,102 +45,155 @@ public class VentanaViajeEnCurso extends VentanaBase {
         super("Viaje en curso");
         solicitud = BaseDatos.solicitudEnCurso;
         viaje = solicitud.getViaje();
+        BaseDatos.viajeSeleccionado = viaje;
         Usuario conductor = viaje.getConductor();
+        mapa = new PanelMapa(viaje);
+        inicio = BaseDatos.inicioViaje(solicitud);
+        double km = mapa.distanciaKm();
+        duracionEstimada = km <= 0;
+        minutosTotales = km > 0 ? Math.max(8, km / 28.0 * 60) : 35;   // ~28 km/h promedio en ciudad
 
-        // ---------- Cabecera ----------
-        cabecera = Estilo.encabezado("Viaje en curso", viaje.getRuta());
-        lienzo.add(cabecera);
+        encabezado("Viaje en curso", viaje.getRuta(), true);
+        Diseno.Columna c = crearCuerpo().conSeparacion(16);
+
+        // ---------- Alerta SOS (oculta hasta activarla) ----------
+        alerta = crearAlerta();
+        c.agregar(alerta);
+
+        Diseno.Rejilla dos = new Diseno.Rejilla(360, 2, 20, 20).igualarAlto(false).conCorte(820);
 
         // ---------- Mapa ----------
-        mapa = new PanelMapa(viaje);
-        mapa.setBounds(12, 88, 356, 300);
-        mapa.setProgreso(0);
-        lienzo.add(mapa);
+        Estilo.Tarjeta tm = Estilo.Tarjeta.conColumna(0);
+        tm.conRelleno(10, 10);
+        mapa.setPreferredSize(new Dimension(300, 300));
+        tm.columna().agregar(mapa);
+        // el mapa va debajo del estado (se agrega mas abajo)
 
-        // Boton SOS flotante sobre el mapa
-        JButton sos = new Estilo.Boton("SOS", 60) {
-            @Override protected void paintComponent(java.awt.Graphics g) {
-                java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
-                Estilo.suavizar(g2);
-                g2.setColor(new Color(220, 38, 38, 70));
-                g2.fillOval(0, 0, getWidth(), getHeight());
-                g2.dispose();
-                super.paintComponent(g);
-            }
-        };
-        sos.setBounds(298, 300, 62, 62);
-        sos.setBackground(Estilo.ROJO);
-        sos.setForeground(Color.WHITE);
-        sos.setFont(new Font("Segoe UI", Font.BOLD, 15));
-        sos.setToolTipText("Boton de panico: alerta a Wheels y comparte tu ubicacion");
-        sos.addActionListener(e -> panico());
-        lienzo.add(sos);
-        lienzo.setComponentZOrder(sos, 0);
+        Diseno.Columna der = new Diseno.Columna(100000, 0, 0).conSeparacion(16);
 
-        // ---------- Estado / ETA ----------
-        JPanel info = Estilo.tarjeta(12, 396, 356, 74);
-        lblEstado = Estilo.texto("En camino", 14, 10, 200, Estilo.SUBTITULO, Estilo.TEXTO);
-        info.add(lblEstado);
-        lblEta = Estilo.texto("", 14, 32, 220, Estilo.NORMAL, Estilo.GRIS);
-        info.add(lblEta);
-        lblVelocidad = Estilo.texto("", 230, 10, 112, Estilo.TITULO, Estilo.AZUL);
-        lblVelocidad.setHorizontalAlignment(SwingConstants.RIGHT);
-        info.add(lblVelocidad);
-        JLabel gps = Estilo.texto("GPS simulado", 230, 38, 112, Estilo.PEQUENA, Estilo.GRIS);
-        gps.setHorizontalAlignment(SwingConstants.RIGHT);
-        info.add(gps);
-        lblEta.setText(String.format("Ruta de %.1f km", mapa.distanciaKm()));
-        lienzo.add(info);
+        // ---------- Estado / llegada ----------
+        Estilo.Tarjeta est = Estilo.Tarjeta.conColumna(0);
+        Diseno.Columna e = est.columna();
+        lblEstado = Estilo.texto("En camino", Estilo.h2(), Estilo.TEXTO);
+        lblEstado.setIcon(Iconos.de(Iconos.Tipo.NAVEGACION, 20, Estilo.TEAL_OSCURO));
+        lblEstado.setIconTextGap(10);
+        e.agregar(lblEstado);
+        e.espacio(14);
+        JPanel tiempos = Estilo.panel(new GridLayout(1, 2, 12, 0));
+        lblEta = Estilo.texto("--:--", Estilo.fuente(22, Estilo.NEGRITA), Estilo.NAVY);
+        lblRestante = Estilo.texto("--", Estilo.fuente(22, Estilo.NEGRITA), Estilo.NAVY);
+        tiempos.add(dato("Llegada estimada", lblEta));
+        tiempos.add(dato("Tiempo restante", lblRestante));
+        e.agregar(tiempos);
+        e.espacio(16);
+        barra = new JProgressBar(0, 1000);
+        barra.setForeground(Estilo.TEAL);
+        barra.setBackground(Estilo.HOVER);
+        barra.setBorderPainted(false);
+        barra.setPreferredSize(new Dimension(100, 8));
+        barra.getAccessibleContext().setAccessibleName("Progreso estimado del viaje");
+        e.agregar(barra);
+        e.espacio(12);
+        e.agregar(new Estilo.Parrafo(duracionEstimada
+                ? "Estimación de 35 min basada en el tiempo transcurrido: no reconocemos todos los lugares de la ruta y Wheels no usa GPS."
+                : "Progreso estimado según el tiempo transcurrido desde que iniciaste el viaje. Wheels no usa GPS.",
+                Estilo.fuente(12, Estilo.REGULAR), Estilo.GRIS));
+        der.agregar(est);
+        der.agregar(tm);
 
         // ---------- Conductor ----------
-        JPanel pc = Estilo.tarjeta(12, 476, 356, 64);
-        pc.add(Estilo.avatar(conductor.getIniciales(), 12, 12, 38));
-        pc.add(Estilo.texto(conductor.getNombre() + "   " + Estilo.estrellas(conductor.getCalificacion()),
-                60, 10, 290, Estilo.SUBTITULO, Estilo.TEXTO));
-        pc.add(Estilo.texto(viaje.getVehiculo() + "  -  " + viaje.getVehiculo().getColor(),
-                60, 30, 290, Estilo.PEQUENA, Estilo.GRIS));
-        lienzo.add(pc);
+        Estilo.Tarjeta pc = Estilo.Tarjeta.conColumna(0);
+        Diseno.Columna p = pc.columna();
+        JPanel fila = Estilo.panel(new BorderLayout(12, 0));
+        fila.add(new Estilo.Avatar(conductor.getIniciales(), conductor.getEmail(), 46), BorderLayout.WEST);
+        JPanel txt = Estilo.panel(new GridLayout(2, 1));
+        txt.add(Estilo.texto(conductor.getNombre(), Estilo.h3(), Estilo.TEXTO));
+        txt.add(Estilo.texto(viaje.getVehiculo().getNombre() + " · " + viaje.getVehiculo().getColor().toLowerCase(),
+                Estilo.pequena(), Estilo.GRIS));
+        fila.add(txt, BorderLayout.CENTER);
+        JPanel pl = Estilo.panel(new java.awt.GridBagLayout());
+        pl.add(Utilidades.placa(viaje.getVehiculo().getPlaca()));
+        fila.add(pl, BorderLayout.EAST);
+        p.agregar(fila);
+        if (!conductor.getTelefono().isEmpty()) {
+            p.espacio(12);
+            JPanel tel = Estilo.panel(new BorderLayout());
+            tel.add(Estilo.dato(Iconos.Tipo.TELEFONO, conductor.getTelefono()), BorderLayout.WEST);
+            JButton copiar = Estilo.enlace("Copiar número");
+            copiar.addActionListener(ev -> {
+                Utilidades.copiar(conductor.getTelefono());
+                toast("Número copiado", Dialogos.Tono.EXITO);
+            });
+            tel.add(copiar, BorderLayout.EAST);
+            p.agregar(tel);
+        }
+        der.agregar(pc);
 
         // ---------- Acciones ----------
-        JButton chat = Estilo.botonBlanco("Chat", 12, 548, 112);
-        chat.addActionListener(e -> new DialogoChat(this, conductor, viaje).setVisible(true));
-        lienzo.add(chat);
-
-        JButton compartir = Estilo.botonBlanco("Compartir", 134, 548, 112);
-        compartir.addActionListener(e -> compartirUbicacion(true));
-        lienzo.add(compartir);
-
-        JButton maps = Estilo.botonBlanco("Google Maps", 256, 548, 112);
-        maps.addActionListener(e -> abrirNavegador(mapa.enlaceGoogleMaps()));
-        lienzo.add(maps);
-
-        JButton finalizar = Estilo.botonPrimario("Finalizar viaje", 12, 596, 356);
-        finalizar.addActionListener(e -> finalizar());
-        lienzo.add(finalizar);
-
-        JButton salir = Estilo.enlace("< Volver a Mis viajes (el viaje sigue en curso)", 12, 648, 356);
-        salir.addActionListener(e -> { detener(); irA(new VentanaMisViajes()); });
-        lienzo.add(salir);
-
-        // ---------- Simulacion del recorrido ----------
-        final double km = mapa.distanciaKm();
-        final double minutosTotales = Math.max(8, km / 28.0 * 60);   // ~28 km/h en ciudad
-        timerViaje = new Timer(100, e -> {
-            if (llego) return;
-            progreso = Math.min(1, progreso + 0.0025);   // ~40 s de recorrido en pantalla
-            mapa.setProgreso(progreso);
-            int restantes = (int) Math.ceil((1 - progreso) * minutosTotales);
-            lblEta.setText(String.format("Llegada en %d min  -  %.1f km restantes", restantes, (1 - progreso) * km));
-            lblVelocidad.setText((22 + (int) (Math.sin(progreso * 40) * 8 + 8)) + " km/h");
-            if (progreso >= 1) {
-                llego = true;
-                lblEstado.setText("Has llegado a tu destino");
-                lblEstado.setForeground(Estilo.VERDE);
-                lblEta.setText(viaje.getDestino());
-                lblVelocidad.setText("0 km/h");
-            }
+        JPanel acciones = Estilo.panel(new GridLayout(1, 3, 10, 0));
+        JButton chat = Estilo.boton("Chat", Estilo.TipoBoton.SECUNDARIO, Estilo.Tamano.NORMAL, Iconos.Tipo.CHAT);
+        chat.addActionListener(ev -> DialogoChat.abrir(this, conductor, viaje));
+        JButton compartir = Estilo.boton("Compartir", Estilo.TipoBoton.SECUNDARIO, Estilo.Tamano.NORMAL, Iconos.Tipo.COMPARTIR);
+        compartir.setToolTipText("Copia los datos del viaje para enviarlos a un contacto de confianza");
+        compartir.addActionListener(ev -> {
+            Utilidades.copiar(textoCompartir());
+            toast("Datos del viaje copiados. Pégalos en WhatsApp o SMS.", Dialogos.Tono.EXITO);
         });
+        JButton maps = Estilo.boton("Mapa", Estilo.TipoBoton.SECUNDARIO, Estilo.Tamano.NORMAL, Iconos.Tipo.MAPA);
+        maps.setToolTipText("Abrir la ruta en Google Maps");
+        maps.addActionListener(ev -> Utilidades.abrirNavegador(this, mapa.enlaceGoogleMaps()));
+        acciones.add(chat);
+        acciones.add(compartir);
+        acciones.add(maps);
+        der.agregar(acciones);
+
+        JButton sos = Estilo.boton("SOS · Botón de pánico", Estilo.TipoBoton.PELIGRO, Estilo.Tamano.GRANDE, Iconos.Tipo.SOS);
+        sos.setToolTipText("Registra una alerta urgente y avisa a los administradores de Wheels");
+        sos.addActionListener(ev -> panico());
+        der.agregar(sos);
+
+        JButton finalizar = Estilo.boton("Finalizar viaje", Estilo.TipoBoton.PRIMARIO, Estilo.Tamano.GRANDE, Iconos.Tipo.CHECK);
+        finalizar.addActionListener(ev -> finalizar());
+        der.agregar(finalizar);
+
+        dos.add(der);
+        c.agregar(dos);
+
+        actualizar();
+        timerViaje = new Timer(1000, ev -> actualizar());
         timerViaje.start();
+    }
+
+    @Override public String seccion() { return VIAJES; }
+
+    @Override public void alSalir() { detener(); }
+
+    private JPanel dato(String etiqueta, JLabel valor) {
+        JPanel p = Estilo.panel(new BorderLayout(0, 2));
+        p.add(Estilo.texto(etiqueta, Estilo.fuente(12, Estilo.REGULAR), Estilo.GRIS), BorderLayout.NORTH);
+        p.add(valor, BorderLayout.CENTER);
+        return p;
+    }
+
+    /** Recalcula el progreso con el reloj real. */
+    private void actualizar() {
+        double transcurridos = (System.currentTimeMillis() - inicio) / 60000.0;
+        double progreso = Math.min(1, transcurridos / minutosTotales);
+        mapa.setProgreso(progreso);
+        barra.setValue((int) (progreso * 1000));
+        long llegada = inicio + (long) (minutosTotales * 60000);
+        lblEta.setText(HORA.format(Instant.ofEpochMilli(llegada).atZone(ZoneId.systemDefault())).toLowerCase());
+        int restantes = (int) Math.ceil(minutosTotales - transcurridos);
+        if (progreso >= 1) {
+            if (!llego) {
+                llego = true;
+                lblEstado.setText("Deberías estar llegando");
+                lblEstado.setIcon(Iconos.de(Iconos.Tipo.UBICACION, 20, Estilo.VERDE));
+                lblRestante.setText("0 min");
+            }
+        } else {
+            lblRestante.setText(restantes + " min");
+        }
     }
 
     private void detener() {
@@ -140,85 +201,98 @@ public class VentanaViajeEnCurso extends VentanaBase {
         if (timerAlerta != null) timerAlerta.stop();
     }
 
-    private String ubicacionTexto() {
-        return "https://maps.google.com/?q=" + PanelMapa.coord(mapa.posicionActual());
-    }
-
-    private void compartirUbicacion(boolean avisar) {
-        String txt = "Voy en un viaje Wheels: " + viaje.getRuta() + ". Conductor: "
-                + viaje.getConductor().getNombre() + ", placa " + viaje.getVehiculo().getPlaca()
-                + ". Mi ubicacion: " + ubicacionTexto();
-        Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(txt), null);
-        if (avisar) {
-            JOptionPane.showMessageDialog(this,
-                    "Ubicacion copiada al portapapeles.\nPegala en WhatsApp o SMS para compartirla.",
-                    "Compartir ubicacion", JOptionPane.INFORMATION_MESSAGE);
-        }
+    private String textoCompartir() {
+        long llegada = inicio + (long) (minutosTotales * 60000);
+        return "Voy en un viaje de Wheels: " + viaje.getOrigen() + " → " + viaje.getDestino()
+                + ". Conductor: " + viaje.getConductor().getNombre()
+                + ", " + viaje.getVehiculo().getNombre() + " color " + viaje.getVehiculo().getColor().toLowerCase()
+                + ", placa " + viaje.getVehiculo().getPlaca()
+                + ". Llegada estimada: " + HORA.format(Instant.ofEpochMilli(llegada).atZone(ZoneId.systemDefault())).toLowerCase()
+                + ". Ruta: " + mapa.enlaceGoogleMaps();
     }
 
     // ------------------------------------------------------------------
     //  BOTON DE PANICO
     // ------------------------------------------------------------------
 
-    private void panico() {
-        if (alertaActiva) {
-            mostrarPanelAlerta(-1);
-            return;
-        }
-        int r = JOptionPane.showConfirmDialog(this,
-                "Activar ALERTA SOS?\n\n"
-                + "- Se registra un reporte urgente en Wheels\n"
-                + "- Se notifica a los administradores con tu ubicacion\n"
-                + "- Se copia tu ubicacion para compartirla\n",
-                "Boton de panico", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-        if (r != JOptionPane.YES_OPTION) return;
-
-        alertaActiva = true;
-        Toolkit.getDefaultToolkit().beep();
-        int idReporte = BaseDatos.activarPanico(viaje, ubicacionTexto());
-        compartirUbicacion(false);
-        mapa.setAlerta(true);
-
-        // La cabecera parpadea en rojo
-        final Color[] colores = {Estilo.ROJO, new Color(127, 29, 29)};
-        final int[] i = {0};
-        ((JLabel) cabecera.getComponent(0)).setText("ALERTA SOS ACTIVA");
-        ((JLabel) cabecera.getComponent(1)).setForeground(Color.WHITE);
-        timerAlerta = new Timer(500, e -> {
-            i[0]++;
-            ((Estilo.PanelDegradado) cabecera).setColorFijo(colores[i[0] % 2]);
-        });
-        ((Estilo.PanelDegradado) cabecera).setColorFijo(Estilo.ROJO);
-        timerAlerta.start();
-        lblEstado.setText("Alerta SOS enviada");
-        lblEstado.setForeground(Estilo.ROJO);
-
-        mostrarPanelAlerta(idReporte);
+    private Estilo.Tarjeta crearAlerta() {
+        Estilo.Tarjeta t = new Estilo.Tarjeta(new BorderLayout(14, 0)).conFondo(Estilo.ROJO).conBorde(Estilo.ROJO);
+        t.setBorder(BorderFactory.createEmptyBorder(16, 18, 18, 18));
+        t.add(new Estilo.IconoCirculo(Iconos.Tipo.SOS, new Color(255, 255, 255, 40), Color.WHITE, 46), BorderLayout.WEST);
+        JPanel txt = Estilo.panel(new GridLayout(2, 1, 0, 2));
+        txt.add(Estilo.texto("Alerta SOS activa", Estilo.h3(), Color.WHITE));
+        txt.add(Estilo.texto("Emergencias: 123 · Policía: 112 · Línea de la mujer: 155", Estilo.pequena(), new Color(0xFEE2E2)));
+        t.add(txt, BorderLayout.CENTER);
+        JButton salvo = Estilo.boton("Estoy a salvo", Estilo.TipoBoton.CLARO, Estilo.Tamano.NORMAL, Iconos.Tipo.CHECK);
+        salvo.addActionListener(e -> cerrarAlerta());
+        JPanel b = Estilo.panel(new java.awt.GridBagLayout());
+        b.add(salvo);
+        t.add(b, BorderLayout.EAST);
+        t.setVisible(false);
+        return t;
     }
 
-    private void mostrarPanelAlerta(int idReporte) {
-        String msg = "<html><div style='width:260px'>"
-                + "<h2 style='color:#dc2626;margin:0'>Alerta SOS enviada</h2>"
-                + (idReporte > 0 ? "<p>Reporte de emergencia <b>#" + idReporte + "</b> registrado.</p>" : "")
-                + "<p>Los administradores de Wheels fueron notificados con tu ubicacion. "
-                + "Tu ubicacion ya esta copiada: pegala en WhatsApp a un contacto de confianza.</p>"
-                + "<p><b>Lineas de emergencia en Colombia:</b><br>"
-                + "Linea unica de emergencias: <b>123</b><br>"
-                + "Policia (CAI): <b>112</b><br>Linea de la mujer: <b>155</b></p></div></html>";
-        Object[] opciones = {"Estoy a salvo", "Seguir con alerta"};
-        int r = JOptionPane.showOptionDialog(this, msg, "SOS", JOptionPane.DEFAULT_OPTION,
-                JOptionPane.ERROR_MESSAGE, null, opciones, opciones[1]);
-        if (r == 0) {
-            alertaActiva = false;
-            if (timerAlerta != null) timerAlerta.stop();
-            mapa.setAlerta(false);
-            BaseDatos.notificar(BaseDatos.usuarioActual.getId(), "Alerta SOS cerrada",
-                    "Marcaste que estas a salvo en el viaje " + viaje.getRuta() + ".", "panic_closed");
-            ((Estilo.PanelDegradado) cabecera).setColorFijo(Estilo.VERDE);
-            ((JLabel) cabecera.getComponent(0)).setText("Estas a salvo - viaje en curso");
-            lblEstado.setText(llego ? "Has llegado a tu destino" : "En camino");
-            lblEstado.setForeground(Estilo.TEXTO);
+    private void panico() {
+        if (alertaActiva) {
+            mostrarInfoAlerta(-1);
+            return;
         }
+        if (!Dialogos.confirmar(this, "¿Activar la alerta SOS?",
+                "Se registrará un reporte urgente en Wheels, se notificará a los administradores con los datos "
+                + "del viaje y se copiará un mensaje de emergencia para que lo envíes a un contacto de confianza.",
+                "Activar alerta", true)) return;
+
+        alertaActiva = true;
+        java.awt.Toolkit.getDefaultToolkit().beep();
+        double[] pos = mapa.posicionActual();
+        String ubicacion = pos != null
+                ? "Posición estimada en la ruta (sin GPS): https://maps.google.com/?q=" + PanelMapa.coord(pos)
+                : "Ruta: " + mapa.enlaceGoogleMaps();
+        int idReporte = BaseDatos.activarPanico(viaje, ubicacion);
+        Utilidades.copiar("EMERGENCIA. " + textoCompartir());
+        mapa.setAlerta(true);
+        barra.setForeground(Estilo.ROJO);
+
+        alerta.setVisible(true);
+        final Color[] colores = {Estilo.ROJO, new Color(0xB91C1C)};
+        final int[] i = {0};
+        timerAlerta = new Timer(600, e -> {
+            i[0]++;
+            alerta.conFondo(colores[i[0] % 2]).conBorde(colores[i[0] % 2]);
+        });
+        timerAlerta.start();
+        cuerpo.revalidate();
+        subir();
+        mostrarInfoAlerta(idReporte);
+    }
+
+    private void mostrarInfoAlerta(int idReporte) {
+        Diseno.Columna lineas = new Diseno.Columna(400, 0, 0).conSeparacion(10);
+        lineas.agregar(Utilidades.filaDato("Línea única de emergencias", "123"));
+        lineas.agregar(Utilidades.filaDato("Policía (CAI)", "112"));
+        lineas.agregar(Utilidades.filaDato("Línea de la mujer", "155"));
+        new Dialogos.Constructor(this, "Alerta SOS enviada")
+                .tono(Dialogos.Tono.PELIGRO)
+                .mensaje((idReporte > 0 ? "Registramos el reporte de emergencia #" + idReporte + " y " : "")
+                        + "avisamos a los administradores de Wheels. Copiamos un mensaje de emergencia con los datos "
+                        + "del viaje: pégalo en WhatsApp o SMS a un contacto de confianza. Si estás en peligro, llama ya:")
+                .contenido(lineas)
+                .botonPrincipal("Entendido", Estilo.TipoBoton.PELIGRO, null)
+                .mostrar();
+    }
+
+    private void cerrarAlerta() {
+        if (!Dialogos.confirmar(this, "¿Estás a salvo?", "Cerraremos la alerta y quedará registrado que estás bien.",
+                "Sí, estoy a salvo", false)) return;
+        alertaActiva = false;
+        if (timerAlerta != null) timerAlerta.stop();
+        alerta.setVisible(false);
+        mapa.setAlerta(false);
+        barra.setForeground(Estilo.TEAL);
+        BaseDatos.notificar(BaseDatos.usuarioActual.getId(), "Alerta SOS cerrada",
+                "Marcaste que estás a salvo en el viaje " + viaje.getRuta() + ".", "panic_closed");
+        cuerpo.revalidate();
+        toast("Alerta cerrada. Nos alegra que estés bien.", Dialogos.Tono.EXITO);
     }
 
     // ------------------------------------------------------------------
@@ -226,65 +300,19 @@ public class VentanaViajeEnCurso extends VentanaBase {
     // ------------------------------------------------------------------
 
     private void finalizar() {
-        if (!llego) {
-            int r = JOptionPane.showConfirmDialog(this,
-                    "Aun no llegas al destino. Finalizar el viaje de todas formas?",
-                    "Wheels", JOptionPane.YES_NO_OPTION);
-            if (r != JOptionPane.YES_OPTION) return;
-        }
+        if (!llego && !Dialogos.confirmar(this, "¿Finalizar el viaje?",
+                "Según el tiempo estimado aún no llegas al destino. ¿Quieres finalizarlo de todas formas?",
+                "Finalizar viaje", false)) return;
         detener();
-        BaseDatos.cambiarEstado(solicitud, Solicitud.COMPLETADA);
-
-        // Calificacion con estrellas
-        JPanel p = new JPanel(null);
-        p.setPreferredSize(new java.awt.Dimension(280, 120));
-        p.add(Estilo.texto("Como estuvo tu viaje con " + viaje.getConductor().getPrimerNombre() + "?",
-                0, 0, 280, Estilo.SUBTITULO, Estilo.TEXTO));
-        final int[] puntaje = {5};
-        final JButton[] estrellas = new JButton[5];
-        for (int k = 0; k < 5; k++) {
-            final int valor = k + 1;
-            JButton b = new JButton("★");
-            b.setBounds(k * 46, 28, 44, 40);
-            b.setFont(new Font("Segoe UI Symbol", Font.PLAIN, 26));
-            b.setContentAreaFilled(false);
-            b.setBorderPainted(false);
-            b.setFocusPainted(false);
-            b.setForeground(Estilo.AMBAR);
-            b.addActionListener(ev -> {
-                puntaje[0] = valor;
-                for (int j = 0; j < 5; j++) estrellas[j].setForeground(j < valor ? Estilo.AMBAR : Estilo.LINEA);
-            });
-            estrellas[k] = b;
-            p.add(b);
-        }
-        JTextField comentario = Estilo.campo(0, 80, 280);
-        comentario.setText("Excelente viaje");
-        p.add(comentario);
-
-        int r = JOptionPane.showConfirmDialog(this, p, "Califica tu viaje",
-                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
-        if (r == JOptionPane.OK_OPTION) {
-            BaseDatos.calificar(viaje, viaje.getConductor().getId(), puntaje[0], comentario.getText().trim());
-            JOptionPane.showMessageDialog(this, "Gracias por calificar. Viaje guardado en tu historial.",
-                    "Wheels", JOptionPane.INFORMATION_MESSAGE);
+        if (!BaseDatos.finalizarViaje(solicitud)) {
+            timerViaje.start();
+            return;
         }
         BaseDatos.solicitudEnCurso = null;
-        irA(new VentanaMisViajes(Solicitud.COMPLETADA));
-    }
-
-    @Override
-    public void dispose() {
-        detener();
-        super.dispose();
-    }
-
-    static void abrirNavegador(String url) {
-        try {
-            java.awt.Desktop.getDesktop().browse(new java.net.URI(url));
-        } catch (Exception ex) {
-            Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(url), null);
-            JOptionPane.showMessageDialog(null, "No se pudo abrir el navegador. Enlace copiado:\n" + url);
-        }
+        boolean califico = !BaseDatos.yaCalifico(viaje, viaje.getConductor().getId())
+                && DialogoCalificar.mostrar(this, viaje);
+        irRaiz(() -> new VentanaMisViajes(VentanaMisViajes.HISTORIAL));
+        toast(califico ? "Viaje finalizado. ¡Gracias por calificar!" : "Viaje finalizado y guardado en tu historial.",
+                Dialogos.Tono.EXITO);
     }
 }

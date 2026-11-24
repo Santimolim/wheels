@@ -1,18 +1,29 @@
 package wheels.modelo;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.TextStyle;
+import java.util.Locale;
+
 /** Viaje publicado por un estudiante conductor (tabla trips). */
 public class Viaje {
 
-    private int id;
-    private Usuario conductor;
-    private Vehiculo vehiculo;
-    private String origen;
-    private String destino;
-    private String fecha;   // AAAA-MM-DD
-    private String hora;    // HH:MM:SS
+    public static final String DISPONIBLE = "available";
+    public static final String LLENO      = "full";
+    public static final String CANCELADO  = "cancelled";
+
+    private static final Locale ES = Locale.forLanguageTag("es-CO");
+
+    private final int id;
+    private final Usuario conductor;
+    private final Vehiculo vehiculo;
+    private final String origen;
+    private final String destino;
+    private final String fecha;   // AAAA-MM-DD
+    private final String hora;    // HH:MM:SS
     private int puestosDisponibles;
-    private int precio;
-    private String estado;  // available, full, cancelled
+    private final int precio;
+    private String estado;        // available, full, cancelled
 
     public Viaje(int id, Usuario conductor, Vehiculo vehiculo, String origen, String destino,
                  String fecha, String hora, int puestosDisponibles, int precio, String estado) {
@@ -33,9 +44,14 @@ public class Viaje {
     public String getOrigen() { return origen; }
     public String getDestino() { return destino; }
     public String getFecha() { return fecha; }
-    public String getEstado() { return estado; }
+    public String getEstado() { return estado == null ? DISPONIBLE : estado; }
     public int getPuestosDisponibles() { return puestosDisponibles; }
     public int getPrecio() { return precio; }
+
+    public void setPuestosDisponibles(int p) { this.puestosDisponibles = p; }
+    public void setEstado(String estado) { this.estado = estado; }
+
+    public boolean estaCancelado() { return CANCELADO.equals(estado); }
 
     /** Hora sin segundos: 07:00:00 -> 07:00 */
     public String getHora() {
@@ -45,19 +61,46 @@ public class Viaje {
         return hora;
     }
 
-    public void setPuestosDisponibles(int p) { this.puestosDisponibles = p; }
-
     public Vehiculo getVehiculo() {
         return vehiculo != null ? vehiculo : conductor.getVehiculo();
     }
 
-    /** Precio formateado para mostrar en pantalla. */
+    /** Precio formateado para mostrar en pantalla: $6.000 */
     public String getPrecioTexto() {
-        return "$" + String.format("%,d", precio).replace(",", ".");
+        return precioTexto(precio);
+    }
+
+    public static String precioTexto(int valor) {
+        return valor == 0 ? "Gratis" : "$" + String.format("%,d", valor).replace(",", ".");
     }
 
     public String getRuta() {
-        return origen + "  ->  " + destino;
+        return origen + " → " + destino;
+    }
+
+    /** "Hoy", "Mañana" o "mié 25 nov". */
+    public String getFechaAmigable() {
+        try {
+            LocalDate d = LocalDate.parse(fecha);
+            LocalDate hoy = LocalDate.now();
+            if (d.equals(hoy)) return "Hoy";
+            if (d.equals(hoy.plusDays(1))) return "Mañana";
+            String dia = d.getDayOfWeek().getDisplayName(TextStyle.SHORT, ES).replace(".", "");
+            String txt = dia + " " + d.format(DateTimeFormatter.ofPattern("d MMM", ES)).replace(".", "");
+            if (d.getYear() != hoy.getYear()) txt += " " + d.getYear();
+            return txt;
+        } catch (RuntimeException e) {
+            return fecha;
+        }
+    }
+
+    /** true si la fecha del viaje ya paso. */
+    public boolean yaPaso() {
+        try {
+            return LocalDate.parse(fecha).isBefore(LocalDate.now());
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     @Override

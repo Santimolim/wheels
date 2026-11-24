@@ -37,8 +37,13 @@ public class Vehiculo {
     public void setAnio(int anio) { this.anio = anio; }
     public void setPuestos(int puestos) { this.puestos = puestos; }
 
+    /** "Mazda 3 2022" */
+    public String getNombre() {
+        return marca + " " + modelo + " " + anio;
+    }
+
     @Override
     public String toString() {
-        return marca + " " + modelo + " - " + placa;
+        return marca + " " + modelo + " · " + placa;
     }
 }

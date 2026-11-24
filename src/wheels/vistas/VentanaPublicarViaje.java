@@ -1,131 +1,248 @@
 package wheels.vistas;
 
+import java.awt.BorderLayout;
+import java.awt.Cursor;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Locale;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
-import javax.swing.JOptionPane;
+import javax.swing.JComponent;
+import javax.swing.JPanel;
+import javax.swing.JSpinner;
 import javax.swing.JTextField;
+import javax.swing.SpinnerNumberModel;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import wheels.datos.BaseDatos;
+import wheels.modelo.Usuario;
 import wheels.modelo.Vehiculo;
+import wheels.modelo.Viaje;
 
-/** PANTALLA 11 - Publish Trip. */
+/** PANTALLA 11 - Publicar viaje (con vista previa en vivo). */
 public class VentanaPublicarViaje extends VentanaBase {
 
-    private JTextField txtOrigen, txtDestino, txtFecha, txtHora, txtPrecio;
-    private JComboBox<String> cmbPuestos;
+    private final JTextField txtOrigen, txtDestino;
+    private final JComboBox<String> cmbFecha, cmbHora, cmbPuestos, cmbCharla;
+    private final JSpinner spPrecio;
+    private final JCheckBox chkMusica, chkMascotas, chkEquipaje;
+    private final Estilo.Campo cOrigen, cDestino, cHora;
+    private final Estilo.Aviso aviso = new Estilo.Aviso();
+    private final ArrayList<LocalDate> fechas = new ArrayList<>();
+    private final JPanel vistaPrevia = Estilo.panel(new BorderLayout());
+    private final Vehiculo auto;
+
+    /** Si el usuario no tiene vehiculo, primero lo lleva a registrarlo. */
+    public static VentanaBase crear() {
+        if (BaseDatos.usuarioActual.tieneVehiculo()) return new VentanaPublicarViaje();
+        return new VentanaRegistrarVehiculo(true);
+    }
 
     public VentanaPublicarViaje() {
         super("Publicar viaje");
+        Usuario u = BaseDatos.usuarioActual;
+        auto = u.getVehiculo();
 
-        Vehiculo auto = BaseDatos.usuarioActual.getVehiculo();
+        encabezado("Publicar un viaje", "Comparte los puestos libres de tu carro", false);
+        Diseno.Columna c = crearCuerpo();
 
-        lienzo.add(Estilo.encabezado("Publicar viaje", "Ofrece tus puestos libres"));
+        Diseno.Rejilla dos = new Diseno.Rejilla(340, 2, 24, 20).igualarAlto(false).conCorte(860);
 
-        lienzo.add(Estilo.etiqueta("Origen", 20, 92));
-        txtOrigen = Estilo.campo(20, 110, 340);
-        lienzo.add(txtOrigen);
+        // ---------- Formulario ----------
+        Estilo.Tarjeta form = Estilo.Tarjeta.conColumna(4);
+        form.conRelleno(22, 24);
+        Diseno.Columna f = form.columna();
+        f.agregar(aviso);
 
-        lienzo.add(Estilo.etiqueta("Destino", 20, 152));
-        txtDestino = Estilo.campo(20, 170, 340);
-        lienzo.add(txtDestino);
+        f.agregar(Estilo.texto("Recorrido", Estilo.h3(), Estilo.TEXTO));
+        f.espacio(10);
+        Diseno.Rejilla ruta = new Diseno.Rejilla(200, 2, 14, 0);
+        txtOrigen = Estilo.campo("Ej: Centro Chía", Iconos.Tipo.ORIGEN);
+        txtDestino = Estilo.campo("Ej: Universidad de La Sabana", Iconos.Tipo.UBICACION);
+        cOrigen = new Estilo.Campo("Desde", txtOrigen, null);
+        cDestino = new Estilo.Campo("Hacia", txtDestino, null);
+        ruta.add(cOrigen);
+        ruta.add(cDestino);
+        f.agregar(ruta);
 
-        lienzo.add(Estilo.etiqueta("Fecha (aaaa-mm-dd)", 20, 212));
-        txtFecha = Estilo.campo(20, 230, 165);
-        txtFecha.setText(new java.text.SimpleDateFormat("yyyy-MM-dd").format(
-                new java.util.Date(System.currentTimeMillis() + 86400000L)));   // manana
-        lienzo.add(txtFecha);
+        Diseno.Rejilla cuando = new Diseno.Rejilla(130, 4, 14, 0);
+        cmbFecha = Estilo.combo(opcionesFecha());
+        cmbFecha.setSelectedIndex(1);
+        cmbHora = Estilo.combo(opcionesHora());
+        cmbHora.setSelectedItem("07:00");
+        cHora = new Estilo.Campo("Hora de salida", cmbHora, null);
+        String[] puestos = new String[Math.max(1, auto.getPuestos())];
+        for (int i = 0; i < puestos.length; i++) puestos[i] = String.valueOf(i + 1);
+        cmbPuestos = Estilo.combo(puestos);
+        cmbPuestos.setSelectedIndex(Math.min(2, puestos.length - 1));
+        spPrecio = new JSpinner(new SpinnerNumberModel(5000, 0, 50000, 500));
+        spPrecio.setPreferredSize(new java.awt.Dimension(120, 42));
+        spPrecio.setFont(Estilo.cuerpo());
+        spPrecio.putClientProperty(com.formdev.flatlaf.FlatClientProperties.STYLE, "arc:12");
+        JSpinner.NumberEditor ed = new JSpinner.NumberEditor(spPrecio, "$#,##0");
+        spPrecio.setEditor(ed);
+        cuando.add(new Estilo.Campo("Fecha", cmbFecha, null));
+        cuando.add(cHora);
+        cuando.add(new Estilo.Campo("Puestos", cmbPuestos, "Máx. " + auto.getPuestos()));
+        cuando.add(new Estilo.Campo("Precio por puesto", spPrecio, "En pesos · 0 = gratis"));
+        f.agregar(cuando);
 
-        lienzo.add(Estilo.etiqueta("Hora (hh:mm, 24h)", 195, 212));
-        txtHora = Estilo.campo(195, 230, 165);
-        txtHora.setText("07:00");
-        lienzo.add(txtHora);
+        f.espacio(10);
+        f.agregar(Estilo.separador());
+        f.espacio(16);
+        f.agregar(Estilo.texto("Preferencias", Estilo.h3(), Estilo.TEXTO));
+        f.espacio(10);
+        Diseno.FilaFlexible prefs = new Diseno.FilaFlexible(18, 8);
+        chkMusica = check("Música", true);
+        chkMascotas = check("Mascotas", false);
+        chkEquipaje = check("Equipaje", true);
+        prefs.add(chkMusica);
+        prefs.add(chkMascotas);
+        prefs.add(chkEquipaje);
+        f.agregar(prefs);
+        f.espacio(12);
+        cmbCharla = Estilo.combo(new String[]{"Charla normal", "Viaje silencioso", "Conversador"});
+        f.agregar(new Estilo.Campo("Ambiente del viaje", cmbCharla, null));
 
-        lienzo.add(Estilo.etiqueta("Puestos", 20, 272));
-        cmbPuestos = new JComboBox<>(new String[]{"1", "2", "3", "4", "5", "6"});
-        cmbPuestos.setBounds(20, 290, 165, 34);
-        cmbPuestos.setFont(Estilo.NORMAL);
-        cmbPuestos.setBackground(Estilo.BLANCO);
-        cmbPuestos.setSelectedIndex(2);
-        lienzo.add(cmbPuestos);
+        f.espacio(6);
+        f.agregar(Estilo.separador());
+        f.espacio(16);
+        JPanel veh = Estilo.panel(new BorderLayout(12, 0));
+        veh.add(new Estilo.IconoCirculo(Iconos.Tipo.CARRO, Estilo.HOVER, Estilo.NAVY, 42), BorderLayout.WEST);
+        JPanel vt = Estilo.panel(new java.awt.GridLayout(2, 1));
+        vt.add(Estilo.texto(auto.getNombre(), Estilo.cuerpoSemi(), Estilo.TEXTO));
+        vt.add(Estilo.texto("Color " + auto.getColor().toLowerCase() + " · placa " + auto.getPlaca(), Estilo.pequena(), Estilo.GRIS));
+        veh.add(vt, BorderLayout.CENTER);
+        JButton cambiar = Estilo.enlace("Editar vehículo");
+        cambiar.addActionListener(e -> irA(() -> new VentanaRegistrarVehiculo(false)));
+        veh.add(cambiar, BorderLayout.EAST);
+        f.agregar(veh);
+        f.espacio(20);
 
-        lienzo.add(Estilo.etiqueta("Precio por puesto", 195, 272));
-        txtPrecio = Estilo.campo(195, 290, 165);
-        txtPrecio.setText("6000");
-        lienzo.add(txtPrecio);
-
-        lienzo.add(Estilo.etiqueta("Vehiculo", 20, 332));
-        JTextField vehiculo = Estilo.campo(20, 350, 340);
-        vehiculo.setText(auto.toString());
-        vehiculo.setEditable(false);
-        vehiculo.setBackground(Estilo.LINEA);
-        lienzo.add(vehiculo);
-
-        JButton publicar = Estilo.botonPrimario("Publish Trip", 20, 420, 340);
+        JButton publicar = Estilo.boton("Publicar viaje", Estilo.TipoBoton.ACENTO, Estilo.Tamano.GRANDE, Iconos.Tipo.PUBLICAR);
         publicar.addActionListener(e -> publicar());
-        lienzo.add(publicar);
+        f.agregar(publicar);
+        dos.add(form);
 
-        JButton cambiar = Estilo.botonBlanco("Editar mi vehiculo", 20, 472, 340);
-        cambiar.addActionListener(e -> irA(new VentanaRegistrarVehiculo()));
-        lienzo.add(cambiar);
+        // ---------- Vista previa ----------
+        Diseno.Columna prev = new Diseno.Columna(100000, 0, 0).conSeparacion(12);
+        prev.agregar(Estilo.texto("Vista previa", Estilo.h3(), Estilo.TEXTO));
+        prev.agregar(Estilo.texto("Así verán tu viaje los demás estudiantes.", Estilo.pequena(), Estilo.GRIS));
+        vistaPrevia.setPreferredSize(new java.awt.Dimension(300, 196));
+        prev.agregar(vistaPrevia);
+        Estilo.Aviso consejo = new Estilo.Aviso();
+        consejo.mostrar("Escribe lugares conocidos (por ejemplo \"Portal Norte\" o \"Centro Chía\") "
+                + "para que la ruta se dibuje en el mapa.", "info");
+        prev.agregar(consejo);
+        dos.add(prev);
+        c.agregar(dos);
 
-        agregarBarraInferior("Publish");
+        DocumentListener dl = new DocumentListener() {
+            @Override public void insertUpdate(DocumentEvent e) { actualizarVista(); }
+            @Override public void removeUpdate(DocumentEvent e) { actualizarVista(); }
+            @Override public void changedUpdate(DocumentEvent e) { actualizarVista(); }
+        };
+        txtOrigen.getDocument().addDocumentListener(dl);
+        txtDestino.getDocument().addDocumentListener(dl);
+        cmbFecha.addActionListener(e -> actualizarVista());
+        cmbHora.addActionListener(e -> actualizarVista());
+        cmbPuestos.addActionListener(e -> actualizarVista());
+        spPrecio.addChangeListener(e -> actualizarVista());
+        actualizarVista();
+    }
+
+    @Override public String seccion() { return PUBLICAR; }
+    @Override public boolean esRaiz() { return true; }
+    @Override public void alMostrar() { txtOrigen.requestFocusInWindow(); }
+
+    private JCheckBox check(String txt, boolean sel) {
+        JCheckBox c = new JCheckBox(txt, sel);
+        c.setFont(Estilo.cuerpo());
+        c.setForeground(Estilo.TEXTO2);
+        c.setOpaque(false);
+        c.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        return c;
+    }
+
+    private String[] opcionesFecha() {
+        Locale es = Locale.forLanguageTag("es-CO");
+        String[] t = new String[30];
+        for (int i = 0; i < 30; i++) {
+            LocalDate d = LocalDate.now().plusDays(i);
+            fechas.add(d);
+            String s = i == 0 ? "Hoy" : i == 1 ? "Mañana" : d.format(DateTimeFormatter.ofPattern("EEE d MMM", es)).replace(".", "");
+            t[i] = Character.toUpperCase(s.charAt(0)) + s.substring(1);
+        }
+        return t;
+    }
+
+    private static String[] opcionesHora() {
+        ArrayList<String> h = new ArrayList<>();
+        for (int m = 5 * 60; m <= 22 * 60 + 45; m += 15) h.add(String.format("%02d:%02d", m / 60, m % 60));
+        return h.toArray(new String[0]);
+    }
+
+    private Viaje viajeEnFormulario() {
+        String o = txtOrigen.getText().trim(), d = txtDestino.getText().trim();
+        return new Viaje(0, BaseDatos.usuarioActual, auto, o.isEmpty() ? "Origen" : o, d.isEmpty() ? "Destino" : d,
+                fechas.get(cmbFecha.getSelectedIndex()).toString(), cmbHora.getSelectedItem() + ":00",
+                Integer.parseInt(cmbPuestos.getSelectedItem().toString()), ((Number) spPrecio.getValue()).intValue(),
+                Viaje.DISPONIBLE);
+    }
+
+    private void actualizarVista() {
+        vistaPrevia.removeAll();
+        vistaPrevia.add(new TarjetaViaje(viajeEnFormulario(), false), BorderLayout.CENTER);
+        vistaPrevia.revalidate();
+        vistaPrevia.repaint();
     }
 
     private void publicar() {
-        String origen  = txtOrigen.getText().trim();
-        String destino = txtDestino.getText().trim();
-        String fecha   = txtFecha.getText().trim();
-        String hora    = txtHora.getText().trim();
-        String precioT = txtPrecio.getText().trim();
-
-        if (origen.isEmpty() || destino.isEmpty() || fecha.isEmpty()
-                || hora.isEmpty() || precioT.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Debes llenar todos los campos.",
-                    "Wheels", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-
-        if (origen.equalsIgnoreCase(destino)) {
-            JOptionPane.showMessageDialog(this, "El origen y el destino no pueden ser iguales.",
-                    "Wheels", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-
-        if (!fecha.matches("\\d{4}-\\d{2}-\\d{2}")) {
-            JOptionPane.showMessageDialog(this, "La fecha debe tener el formato aaaa-mm-dd. Ejemplo: 2026-11-20",
-                    "Wheels", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-        if (!hora.matches("\\d{1,2}:\\d{2}")) {
-            JOptionPane.showMessageDialog(this, "La hora debe tener el formato hh:mm. Ejemplo: 07:30",
-                    "Wheels", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-        if (hora.length() == 4) hora = "0" + hora;
-        hora = hora + ":00";
-
-        int precio;
+        aviso.ocultar();
+        cOrigen.setError(null);
+        cDestino.setError(null);
+        cHora.setError(null);
         try {
-            precio = Integer.parseInt(precioT.replace(".", ""));
-        } catch (NumberFormatException ex) {
-            JOptionPane.showMessageDialog(this, "El precio debe ser un numero. Ejemplo: 6000",
-                    "Wheels", JOptionPane.ERROR_MESSAGE);
+            spPrecio.commitEdit();
+        } catch (java.text.ParseException ex) {
+            aviso.mostrar("El precio no es válido. Usa solo números, por ejemplo 5000.", "error");
+            revalidate();
             return;
         }
+        String origen = txtOrigen.getText().trim().replaceAll("\\s+", " ");
+        String destino = txtDestino.getText().trim().replaceAll("\\s+", " ");
+        LocalDate fecha = fechas.get(cmbFecha.getSelectedIndex());
+        LocalTime hora = LocalTime.parse(cmbHora.getSelectedItem().toString());
 
-        if (precio < 0) {
-            JOptionPane.showMessageDialog(this, "El precio no puede ser negativo.",
-                    "Wheels", JOptionPane.WARNING_MESSAGE);
+        boolean ok = true;
+        if (origen.length() < 3) { cOrigen.setError("Indica desde dónde sales."); ok = false; }
+        if (destino.length() < 3) { cDestino.setError("Indica hacia dónde vas."); ok = false; }
+        if (ok && PanelMapa.normalizar(origen).equals(PanelMapa.normalizar(destino))) {
+            cDestino.setError("El destino debe ser distinto al origen."); ok = false;
+        }
+        if (origen.length() > 150 || destino.length() > 150) { aviso.mostrar("El nombre del lugar es demasiado largo.", "error"); ok = false; }
+        if (LocalDateTime.of(fecha, hora).isBefore(LocalDateTime.now().plusMinutes(10))) {
+            cHora.setError("Elige una hora al menos 10 min en el futuro."); ok = false;
+        }
+        if (!ok) {
+            revalidate();
+            repaint();
             return;
         }
-
-        int puestos = Integer.parseInt(cmbPuestos.getSelectedItem().toString());
-
-        BaseDatos.viajeSeleccionado = BaseDatos.crearViaje(
-                BaseDatos.usuarioActual, origen, destino, fecha, hora, puestos, precio);
-        if (BaseDatos.viajeSeleccionado == null) {
-            return;
-        }
-
-        irA(new VentanaViajePublicado());
+        String charla = cmbCharla.getSelectedIndex() == 1 ? "quiet" : cmbCharla.getSelectedIndex() == 2 ? "talkative" : "normal";
+        Viaje v = BaseDatos.crearViaje(BaseDatos.usuarioActual, origen, destino, fecha.toString(), hora + ":00",
+                Integer.parseInt(cmbPuestos.getSelectedItem().toString()), ((Number) spPrecio.getValue()).intValue(),
+                chkMusica.isSelected(), chkMascotas.isSelected(), chkEquipaje.isSelected(), charla);
+        if (v == null) return;
+        BaseDatos.viajeSeleccionado = v;
+        JComponent detalle = new TarjetaViaje(v, false);
+        irA(() -> new VentanaExito("¡Viaje publicado!",
+                "Tu viaje ya es visible para otros estudiantes. Te avisaremos en Notificaciones cuando alguien solicite un puesto.",
+                detalle, "Ver mis viajes publicados", () -> Aplicacion.irRaiz(() -> new VentanaMisViajes(VentanaMisViajes.PUBLICADOS)),
+                "Publicar otro", () -> Aplicacion.irRaiz(VentanaPublicarViaje::new)));
     }
 }

@@ -1,53 +1,68 @@
 package wheels.vistas;
 
+import java.awt.BorderLayout;
+import java.awt.Dimension;
 import java.util.ArrayList;
 import javax.swing.JButton;
-import javax.swing.JPanel;
 import wheels.datos.BaseDatos;
 import wheels.modelo.Viaje;
 
-/** PANTALLA - Mapa de la ruta del viaje con sus puntos de recogida. */
+/** PANTALLA - Mapa de la ruta del viaje con sus paradas. */
 public class VentanaMapa extends VentanaBase {
 
     public VentanaMapa() {
         super("Mapa de la ruta");
         final Viaje viaje = BaseDatos.viajeSeleccionado;
-
-        lienzo.add(Estilo.encabezado("Ruta del viaje", viaje.getRuta()));
-
-        agregarVolverEncabezado();
-
         final PanelMapa mapa = new PanelMapa(viaje);
-        mapa.setBounds(12, 92, 356, 330);
-        lienzo.add(mapa);
 
-        // Lista de paradas
+        JButton gmaps = Estilo.boton("Abrir en Google Maps", Estilo.TipoBoton.ACENTO, Estilo.Tamano.NORMAL, Iconos.Tipo.NAVEGACION);
+        gmaps.addActionListener(e -> Utilidades.abrirNavegador(this, mapa.enlaceGoogleMaps()));
+        encabezado("Ruta del viaje", viaje.getRuta(), true, gmaps);
+        Diseno.Columna c = crearCuerpo();
+
+        Diseno.Rejilla dos = new Diseno.Rejilla(320, 2, 20, 20).igualarAlto(false).conCorte(820);
+        // en ventana ancha el mapa ocupa mas espacio que la lista
+        Estilo.Tarjeta tm = Estilo.Tarjeta.conColumna(0);
+        tm.conRelleno(10, 10);
+        mapa.setPreferredSize(new Dimension(300, 380));
+        tm.columna().agregar(mapa);
+        dos.add(tm);
+
+        Estilo.Tarjeta lista = Estilo.Tarjeta.conColumna(14);
+        Diseno.Columna l = lista.columna();
+        l.agregar(Estilo.texto("Paradas", Estilo.h3(), Estilo.TEXTO));
+        l.agregar(parada("A", Estilo.TEAL_OSCURO, viaje.getOrigen(), "Salida · " + viaje.getHora()));
         ArrayList<String[]> puntos = BaseDatos.puntosRecogida(viaje.getId());
-        JPanel paradas = Estilo.tarjeta(12, 432, 356, 160);
-        int y = 10;
-        paradas.add(Estilo.pastilla("A", 12, y, 22, Estilo.VERDE, Estilo.BLANCO));
-        paradas.add(Estilo.texto("Salida: " + viaje.getOrigen() + "  -  " + viaje.getHora(),
-                42, y, 300, Estilo.NORMAL, Estilo.TEXTO));
-        y += 26;
         int n = 1;
         for (String[] p : puntos) {
-            if (y > 100) break;
-            paradas.add(Estilo.pastilla(String.valueOf(n++), 12, y, 22, Estilo.AMBAR, Estilo.BLANCO));
-            paradas.add(Estilo.texto(p[0] + "  -  " + p[2].substring(0, 5), 42, y - 2, 300,
-                    Estilo.NORMAL, Estilo.TEXTO));
-            paradas.add(Estilo.texto(p[1], 42, y + 14, 300, Estilo.PEQUENA, Estilo.GRIS));
-            y += 34;
+            String hora = p[2] != null && p[2].length() >= 5 ? p[2].substring(0, 5) : "";
+            l.agregar(parada(String.valueOf(n++), Estilo.AMBAR, p[0], p[1] + (hora.isEmpty() ? "" : " · " + hora)));
         }
-        paradas.add(Estilo.pastilla("B", 12, y, 22, Estilo.ROJO, Estilo.BLANCO));
-        paradas.add(Estilo.texto("Llegada: " + viaje.getDestino(), 42, y, 300, Estilo.NORMAL, Estilo.TEXTO));
+        l.agregar(parada("B", Estilo.NAVY, viaje.getDestino(), "Llegada"));
         if (puntos.isEmpty()) {
-            paradas.add(Estilo.texto("Este viaje no tiene puntos de recogida registrados.",
-                    12, y + 30, 330, Estilo.PEQUENA, Estilo.GRIS));
+            l.agregar(new Estilo.Parrafo("Este viaje no tiene puntos de recogida intermedios: el conductor sale directo al destino.",
+                    Estilo.pequena(), Estilo.GRIS));
         }
-        lienzo.add(paradas);
+        if (!mapa.getDesconocidos().isEmpty()) {
+            Estilo.Aviso a = new Estilo.Aviso();
+            a.mostrar("No reconocemos " + String.join(", ", mapa.getDesconocidos())
+                    + " en el mapa sin conexión. Usa Google Maps para ver la ubicación exacta.", "alerta");
+            l.agregar(a);
+        }
+        dos.add(lista);
+        c.agregar(dos);
+    }
 
-        JButton maps = Estilo.botonPrimario("Abrir en Google Maps", 12, 604, 356);
-        maps.addActionListener(e -> VentanaViajeEnCurso.abrirNavegador(mapa.enlaceGoogleMaps()));
-        lienzo.add(maps);
+    @Override public String seccion() { return INICIO; }
+
+    private PanelAcceso.FilaIcono parada(String letra, java.awt.Color color, String titulo, String detalle) {
+        Estilo.Pastilla p = new Estilo.Pastilla(letra, color, Estilo.BLANCO, null);
+        p.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
+        p.setPreferredSize(new Dimension(28, 28));
+        p.setFont(Estilo.fuente(12, Estilo.NEGRITA));
+        Diseno.Columna t = new Diseno.Columna(100000, 0, 0).conSeparacion(2);
+        t.agregar(Estilo.texto(titulo, Estilo.cuerpoSemi(), Estilo.TEXTO));
+        t.agregar(new Estilo.Parrafo(detalle, Estilo.pequena(), Estilo.GRIS));
+        return new PanelAcceso.FilaIcono(p, t);
     }
 }

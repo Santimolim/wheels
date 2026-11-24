@@ -4,6 +4,10 @@
 -- Pestana "Importar" -> elegir este archivo -> Continuar
 -- Todos los campos son INT o VARCHAR
 -- OJO: borra y recrea la base "wheels" con sus datos
+-- Datos de prueba: las fechas de los viajes se calculan a partir
+-- del dia de la importacion (manana, pasado manana...).
+-- Las contrasenas de prueba (123456) estan en texto plano: la
+-- aplicacion las cifra (PBKDF2) en el primer inicio de sesion.
 -- =========================================================
 
 SET NAMES utf8mb4;
@@ -84,7 +88,7 @@ CREATE TABLE `trips` (
   CONSTRAINT `fk_trips_vehicle` FOREIGN KEY (`vehicle_id`) REFERENCES `vehicles` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-INSERT INTO `trips` VALUES (1,1,1,'Chia','Universidad de La Sabana','2026-09-03','07:00:00',3,5000,'available','2026-10-07 08:06:39'),(2,2,2,'Bogota','Universidad de La Sabana','2026-09-03','06:30:00',2,6000,'available','2026-10-07 08:06:39'),(3,3,3,'Bogota','Universidad de los Andes','2026-09-04','07:15:00',3,5000,'available','2026-10-07 08:06:39'),(4,4,4,'Bogota','Universidad Nacional','2026-09-04','06:45:00',2,4500,'available','2026-10-07 08:06:39'),(5,5,5,'Bogota','Pontificia Universidad Javeriana','2026-09-05','07:30:00',1,5500,'full','2026-10-07 08:06:39'),(6,6,6,'Bogota','Universidad del Rosario','2026-09-05','06:50:00',3,5000,'available','2026-10-07 08:06:39'),(7,7,7,'Cajica','Universidad de La Sabana','2026-09-06','07:10:00',2,4000,'available','2026-10-07 08:06:39');
+INSERT INTO `trips` VALUES (1,1,1,'Chia','Universidad de La Sabana',DATE_FORMAT(CURDATE() + INTERVAL 1 DAY,'%Y-%m-%d'),'07:00:00',3,5000,'available','2026-10-07 08:06:39'),(2,2,2,'Bogota','Universidad de La Sabana',DATE_FORMAT(CURDATE() + INTERVAL 1 DAY,'%Y-%m-%d'),'06:30:00',2,6000,'available','2026-10-07 08:06:39'),(3,3,3,'Bogota','Universidad de los Andes',DATE_FORMAT(CURDATE() + INTERVAL 2 DAY,'%Y-%m-%d'),'07:15:00',3,5000,'available','2026-10-07 08:06:39'),(4,4,4,'Bogota','Universidad Nacional',DATE_FORMAT(CURDATE() + INTERVAL 2 DAY,'%Y-%m-%d'),'06:45:00',2,4500,'available','2026-10-07 08:06:39'),(5,5,5,'Bogota','Pontificia Universidad Javeriana',DATE_FORMAT(CURDATE() + INTERVAL 3 DAY,'%Y-%m-%d'),'07:30:00',0,5500,'full','2026-10-07 08:06:39'),(6,6,6,'Bogota','Universidad del Rosario',DATE_FORMAT(CURDATE() + INTERVAL 3 DAY,'%Y-%m-%d'),'06:50:00',3,5000,'available','2026-10-07 08:06:39'),(7,7,7,'Cajica','Universidad de La Sabana',DATE_FORMAT(CURDATE() + INTERVAL 4 DAY,'%Y-%m-%d'),'07:10:00',2,4000,'available','2026-10-07 08:06:39');
 
 -- ---------- trip_preferences ----------
 CREATE TABLE `trip_preferences` (
