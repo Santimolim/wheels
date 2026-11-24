@@ -14,7 +14,7 @@ Aplicación de escritorio en Java (Swing) para compartir viajes entre estudiante
 2. En phpMyAdmin: **Importar** → `wheels.sql` → Continuar.
    El script crea la base `wheels` con 11 tablas y datos de prueba
    (las fechas de los viajes se calculan a partir del día de la importación).
-3. Si tu MySQL **no** usa el puerto 3307, copia `wheels.properties.example`
+3. La app prueba sola los puertos 3306 (XAMPP por defecto) y 3307. Si tu MySQL usa otro, copia `wheels.properties.example`
    como `wheels.properties` (junto a `build.xml`) y cambia `db.port`.
 4. Abrir la carpeta en NetBeans → Clean and Build (Shift+F11) → Run (F6).
    La clase principal es `wheels.Wheels`.
@@ -24,7 +24,7 @@ Usuario de prueba: `santiago.molina@unisabana.edu.co` / `123456`
 
 ## Configuración de la base de datos
 Se lee en este orden: propiedades `-Dwheels.db.port=...`, variables de entorno
-`WHEELS_DB_PORT`, archivo `wheels.properties`, y por defecto `localhost:3307 / wheels / root`.
+`WHEELS_DB_PORT`, archivo `wheels.properties`, y por defecto `localhost` con puerto 3306 o 3307 (el que responda), base `wheels`, usuario `root`.
 Claves: `db.host`, `db.port`, `db.name`, `db.user`, `db.password`.
 
 ## Funcionalidades

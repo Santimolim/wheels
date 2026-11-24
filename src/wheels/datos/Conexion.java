@@ -15,7 +15,7 @@ import java.util.Properties;
  *   1. Propiedades del sistema:  -Dwheels.db.port=3306
  *   2. Variables de entorno:     WHEELS_DB_PORT=3306
  *   3. Archivo wheels.properties (carpeta de trabajo, carpeta del .jar o ~/.wheels/)
- *   4. Valores por defecto:      localhost:3307 / wheels / root sin contrasena
+ *   4. Valores por defecto:      localhost, puerto 3306 (o 3307 si falla), base wheels, root sin contrasena
  *
  * Claves disponibles: db.host, db.port, db.name, db.user, db.password
  */
@@ -24,11 +24,11 @@ public class Conexion {
     private static final String DRIVER = "com.mysql.cj.jdbc.Driver";
 
     private final String host;
-    private final String puerto;
+    private String puerto;
+    private final String[] puertos;   // puertos a probar, en orden
     private final String db;
     private final String usuario;
     private final String clave;
-    private final String url;
 
     private Connection cadena;
     private String ultimoError = "";
@@ -37,13 +37,19 @@ public class Conexion {
     private Conexion() {
         Properties archivo = leerArchivo();
         host    = valor("db.host", "localhost", archivo);
-        puerto  = valor("db.port", "3307", archivo);
         db      = valor("db.name", "wheels", archivo);
         usuario = valor("db.user", "root", archivo);
         clave   = valor("db.password", "", archivo);
-        url = "jdbc:mysql://" + host + ":" + puerto + "/" + db
+        // Si no se configuro un puerto, se prueba el de XAMPP por defecto (3306) y luego 3307
+        String fijo = valor("db.port", null, archivo);
+        puertos = fijo != null ? new String[]{fijo} : new String[]{"3306", "3307"};
+        puerto = puertos[0];
+    }
+
+    private String url(String p) {
+        return "jdbc:mysql://" + host + ":" + p + "/" + db
                 + "?useSSL=false&serverTimezone=America/Bogota&allowPublicKeyRetrieval=true"
-                + "&characterEncoding=UTF-8&connectTimeout=4000";
+                + "&characterEncoding=UTF-8&connectTimeout=3000";
     }
 
     public static synchronized Conexion getInstancia() {
@@ -59,8 +65,21 @@ public class Conexion {
             // isValid comprueba que la conexion siga viva (por ejemplo si MySQL se reinicio en XAMPP)
             if (cadena == null || cadena.isClosed() || !cadena.isValid(2)) {
                 Class.forName(DRIVER);
-                cadena = DriverManager.getConnection(url, usuario, clave);
-                ultimoError = "";
+                cadena = null;
+                // primero el puerto que funciono la ultima vez, luego los demas
+                java.util.LinkedHashSet<String> orden = new java.util.LinkedHashSet<>();
+                orden.add(puerto);
+                orden.addAll(java.util.Arrays.asList(puertos));
+                for (String p : orden) {
+                    try {
+                        cadena = DriverManager.getConnection(url(p), usuario, clave);
+                        puerto = p;
+                        ultimoError = "";
+                        break;
+                    } catch (SQLException e) {
+                        ultimoError = e.getMessage();
+                    }
+                }
             }
         } catch (ClassNotFoundException e) {
             ultimoError = "No se encontró el driver de MySQL (mysql-connector-java en lib/).";
